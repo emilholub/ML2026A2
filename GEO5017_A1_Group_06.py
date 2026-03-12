@@ -218,7 +218,7 @@ def RF_classification(X, y):
 if __name__=='__main__':
     # specify the data folder
     """"Here you need to specify your own path"""
-    path = '../Data/pointclouds'
+    path = 'Data/pointclouds'
 
     # conduct feature preparation
     print('Start preparing features')
