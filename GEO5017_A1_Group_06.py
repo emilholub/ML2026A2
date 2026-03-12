@@ -113,25 +113,26 @@ class urban_object:
 
         # local planarity ratio (ratio of points fitting a local plane)
         bbox_diag = np.linalg.norm(self.points.max(axis=0) - self.points.min(axis=0))
-        radius = bbox_diag * 0.1  # 10% of object diagonal
-        threshold = bbox_diag * 0.01  # plane distance threshold also scaled
+        radius = bbox_diag * 0.1
 
         sample = self.points[::5]
-        planar_count = 0
+        planarity_scores = []
 
         for p in sample:
             idx = kd_tree_3d.query_radius([p], r=radius)[0]
-            if len(idx) < 4:  # need minimum points to fit a plane
+            if len(idx) < 4:
                 continue
             neighbors = self.points[idx]
             cov_local = np.cov(neighbors.T)
             evals_local, evecs_local = np.linalg.eig(cov_local)
+            evals_local = np.sort(np.abs(evals_local))
             normal_local = evecs_local[:, np.argmin(np.abs(evals_local))]
-            dist = abs(np.dot(p - neighbors.mean(axis=0), normal_local))
-            if dist < threshold:
-                planar_count += 1
+            dists = np.abs((neighbors - neighbors.mean(axis=0)) @ normal_local)
+            soft_score = (evals_local[1] - evals_local[0]) / (evals_local[2] + 1e-5)
+            neighbor_fit = (dists < np.std(dists)).mean()
+            planarity_scores.append(soft_score * neighbor_fit)
 
-        local_planarity = planar_count / len(sample)
+        local_planarity = np.mean(planarity_scores) if planarity_scores else 0.0
         self.feature.append(local_planarity)
 
 def read_xyz(filenm):
@@ -277,8 +278,8 @@ def RF_classification(X, y):
     conf = confusion_matrix(y_test, y_preds)
     print(conf)
 
-def sequential_feature_selection(X, y, names, clf, direction='backward'):
-    for n in range(1, len(names)):
+def sequential_feature_selection(X, y, names, clf, direction='backward', max_features=4):
+    for n in range(1, max_features + 1):
         sfs = SequentialFeatureSelector(clf, n_features_to_select=n, direction=direction)
         sfs.fit(X, y)
         selected = [name for name, s in zip(names, sfs.get_support()) if s]
@@ -310,15 +311,15 @@ if __name__=='__main__':
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
              'sphericity', 'verticality', 'density', 'omnivariance', 'local_planarity']
 
-    # classifiers = [
-    #     svm.SVC(kernel='linear'),
-    #     svm.SVC(kernel='rbf'),
-    #     svm.SVC(kernel='poly'),
-    #     RandomForestClassifier(n_estimators=100, random_state=42)
-    # ]
-    # for clf in tqdm(classifiers):
-    #     print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
-    #     sequential_feature_selection(X, y, names, clf, direction='backward')
+    classifiers = [
+        svm.SVC(kernel='linear'),
+        svm.SVC(kernel='rbf'),
+        svm.SVC(kernel='poly'),
+        RandomForestClassifier(n_estimators=100, random_state=42)
+    ]
+    for clf in tqdm(classifiers):
+        print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
+        sequential_feature_selection(X, y, names, clf, direction='backward', max_features=4)
 
     # RF classification
     # print('Start RF classification')
