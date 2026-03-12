@@ -17,6 +17,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFE
 from sklearn.ensemble import RandomForestClassifier
 from scipy.spatial import ConvexHull
+from sklearn.feature_selection import SequentialFeatureSelector
 from tqdm import tqdm
 from os.path import exists, join
 from os import listdir
@@ -50,8 +51,8 @@ class urban_object:
         Compute the features, here we provide two example features. You're encouraged to design your own features
         """
         # calculate the height
-        # height = np.amax(self.points[:, 2])
-        # self.feature.append(height)
+        height = np.amax(self.points[:, 2])
+        self.feature.append(height)
 
         # get the root point and top point
         root = self.points[[np.argmin(self.points[:, 2])]]
@@ -62,20 +63,20 @@ class urban_object:
         kd_tree_3d = KDTree(self.points, leaf_size=5)
 
         # compute the root point planar density
-        # radius_root = 0.2
-        # count = kd_tree_2d.query_radius(root[:, :2], r=radius_root, count_only=True)
-        # root_density = 1.0*count[0] / len(self.points)
-        # self.feature.append(root_density)
+        radius_root = 0.2
+        count = kd_tree_2d.query_radius(root[:, :2], r=radius_root, count_only=True)
+        root_density = 1.0*count[0] / len(self.points)
+        self.feature.append(root_density)
 
         # compute the 2D footprint and calculate its area
-        # hull_2d = ConvexHull(self.points[:, :2])
-        # hull_area = hull_2d.volume
-        # self.feature.append(hull_area)
+        hull_2d = ConvexHull(self.points[:, :2])
+        hull_area = hull_2d.volume
+        self.feature.append(hull_area)
 
         # get the hull shape index
-        # hull_perimeter = hull_2d.area
-        # shape_index = 1.0 * hull_area / hull_perimeter
-        # self.feature.append(shape_index)
+        hull_perimeter = hull_2d.area
+        shape_index = 1.0 * hull_area / hull_perimeter
+        self.feature.append(shape_index)
 
         # obtain the point cluster near the top area
         k_top = max(int(len(self.points) * 0.005), 100)
@@ -101,15 +102,37 @@ class urban_object:
         self.feature.append(abs(math.pi / 2 - np.arccos(cos_a)))
 
         #desnity
-        # hull_3d = ConvexHull(self.points)
-        # point_count = len(self.points)
-        # density = point_count / hull_3d.volume
-        # self.feature.append(density)
+        hull_3d = ConvexHull(self.points)
+        point_count = len(self.points)
+        density = point_count / hull_3d.volume
+        self.feature.append(density)
 
         #omnivariacne
         omnivariance = np.cbrt(np.prod(evals))
         self.feature.append(omnivariance)
 
+        # local planarity ratio (ratio of points fitting a local plane)
+        bbox_diag = np.linalg.norm(self.points.max(axis=0) - self.points.min(axis=0))
+        radius = bbox_diag * 0.1  # 10% of object diagonal
+        threshold = bbox_diag * 0.01  # plane distance threshold also scaled
+
+        sample = self.points[::5]
+        planar_count = 0
+
+        for p in sample:
+            idx = kd_tree_3d.query_radius([p], r=radius)[0]
+            if len(idx) < 4:  # need minimum points to fit a plane
+                continue
+            neighbors = self.points[idx]
+            cov_local = np.cov(neighbors.T)
+            evals_local, evecs_local = np.linalg.eig(cov_local)
+            normal_local = evecs_local[:, np.argmin(np.abs(evals_local))]
+            dist = abs(np.dot(p - neighbors.mean(axis=0), normal_local))
+            if dist < threshold:
+                planar_count += 1
+
+        local_planarity = planar_count / len(sample)
+        self.feature.append(local_planarity)
 
 def read_xyz(filenm):
     """
@@ -161,7 +184,7 @@ def feature_preparation(data_path):
     outputs = np.array(input_data).astype(np.float32)
 
     # write the output to a local file
-    data_header = 'ID,label,linearity,sphericity,verticality,omnivariance'
+    data_header = 'ID,label,height,root_density,area,shape_index,linearity,sphericity,verticality,density,omnivariance,local_planarity'
     np.savetxt(data_file, outputs, fmt='%10.5f', delimiter=',', newline='\n', header=data_header)
 
 
@@ -209,11 +232,12 @@ def feature_visualization(X):
     plt.show()
 
 
-def SVM_classification(X, y):
+def SVM_classification(X, y, kernel='linear'):
     """
     Conduct SVM classification
         X: features
         y: labels
+        kernel: kernel function
     """
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
 
@@ -222,8 +246,7 @@ def SVM_classification(X, y):
     X_train_scaled = scale.fit_transform(X_train)
     X_test_scaled = scale.transform(X_test)
 
-
-    clf = svm.SVC(kernel='linear')
+    clf = svm.SVC(kernel=kernel)
     clf.fit(X_train_scaled, y_train)
     y_preds = clf.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_preds)
@@ -254,14 +277,12 @@ def RF_classification(X, y):
     conf = confusion_matrix(y_test, y_preds)
     print(conf)
 
-def backward_feature_selection(X, y):
-    clf = svm.SVC(kernel='linear')
-    selector = RFE(clf, n_features_to_select=1, step=1)
-    selector.fit(X, y)
-    print("Feature ranking (1 = most important):")
-    names = ['linearity', 'sphericity', 'verticality', 'omnivariance']
-    for name, rank in zip(names, selector.ranking_):
-        print(f"  {name}: {rank}")
+def sequential_feature_selection(X, y, names, clf, direction='backward'):
+    for n in range(1, len(names)):
+        sfs = SequentialFeatureSelector(clf, n_features_to_select=n, direction=direction)
+        sfs.fit(X, y)
+        selected = [name for name, s in zip(names, sfs.get_support()) if s]
+        print(f"  {n} features: {selected}")
 
 if __name__=='__main__':
     # specify the data folder
@@ -281,12 +302,50 @@ if __name__=='__main__':
     feature_visualization(X=X)
 
     # SVM classification
-    print('Start SVM classification')
-    SVM_classification(X, y)
+    # print('Start SVM classification')
+    # SVM_classification(X, y)
 
-    print('Start backward feature selection')
-    backward_feature_selection(X, y)
+    ### Figuring out the best combinations of features for each classifier:
+
+    names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
+             'sphericity', 'verticality', 'density', 'omnivariance', 'local_planarity']
+
+    # classifiers = [
+    #     svm.SVC(kernel='linear'),
+    #     svm.SVC(kernel='rbf'),
+    #     svm.SVC(kernel='poly'),
+    #     RandomForestClassifier(n_estimators=100, random_state=42)
+    # ]
+    # for clf in tqdm(classifiers):
+    #     print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
+    #     sequential_feature_selection(X, y, names, clf, direction='backward')
 
     # RF classification
-    print('Start RF classification')
-    RF_classification(X, y)
+    # print('Start RF classification')
+    # RF_classification(X, y)
+
+    best4 = {
+        'linear': ['height', 'shape_index', 'linearity', 'verticality'],
+        'rbf':    ['height', 'shape_index', 'density', 'omnivariance'],
+        'poly':   ['height', 'verticality', 'density', 'omnivariance'],
+    }
+
+    for kernel, features in best4.items():
+        idx = [names.index(n) for n in features]
+        X_best4 = X[:, idx]
+        print(f'\nSVM {kernel} with best 4 features {features}')
+        SVM_classification(X_best4, y, kernel=kernel)
+
+    best4_rf = ['verticality', 'density', 'omnivariance', 'local_planarity']
+    idx = [names.index(n) for n in best4_rf]
+    X_best4_rf = X[:, idx]
+    print(f'\nRF with best 4 features {best4_rf}')
+    RF_classification(X_best4_rf, y)
+
+    ###////////////////////!!!!!!!!!!!!!!!!//////////////////###
+    ### NOTE TO US:
+    ### for testing with different parameters always delete data.txt first
+    ### when adding features do these things with the new feature name:
+    ### compute_features() — append the new value
+    ### data_header in feature_preparation — add the name to the string
+    ### names list in main — add the name in the same order
