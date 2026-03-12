@@ -13,6 +13,9 @@ from sklearn.neighbors import KDTree
 from sklearn import svm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import RFE
+from sklearn.ensemble import RandomForestClassifier
 from scipy.spatial import ConvexHull
 from tqdm import tqdm
 from os.path import exists, join
@@ -47,8 +50,8 @@ class urban_object:
         Compute the features, here we provide two example features. You're encouraged to design your own features
         """
         # calculate the height
-        height = np.amax(self.points[:, 2])
-        self.feature.append(height)
+        # height = np.amax(self.points[:, 2])
+        # self.feature.append(height)
 
         # get the root point and top point
         root = self.points[[np.argmin(self.points[:, 2])]]
@@ -59,20 +62,20 @@ class urban_object:
         kd_tree_3d = KDTree(self.points, leaf_size=5)
 
         # compute the root point planar density
-        radius_root = 0.2
-        count = kd_tree_2d.query_radius(root[:, :2], r=radius_root, count_only=True)
-        root_density = 1.0*count[0] / len(self.points)
-        self.feature.append(root_density)
+        # radius_root = 0.2
+        # count = kd_tree_2d.query_radius(root[:, :2], r=radius_root, count_only=True)
+        # root_density = 1.0*count[0] / len(self.points)
+        # self.feature.append(root_density)
 
         # compute the 2D footprint and calculate its area
-        hull_2d = ConvexHull(self.points[:, :2])
-        hull_area = hull_2d.volume
-        self.feature.append(hull_area)
+        # hull_2d = ConvexHull(self.points[:, :2])
+        # hull_area = hull_2d.volume
+        # self.feature.append(hull_area)
 
         # get the hull shape index
-        hull_perimeter = hull_2d.area
-        shape_index = 1.0 * hull_area / hull_perimeter
-        self.feature.append(shape_index)
+        # hull_perimeter = hull_2d.area
+        # shape_index = 1.0 * hull_area / hull_perimeter
+        # self.feature.append(shape_index)
 
         # obtain the point cluster near the top area
         k_top = max(int(len(self.points) * 0.005), 100)
@@ -89,6 +92,23 @@ class urban_object:
         linearity = (w[2]-w[1]) / (w[2] + 1e-5)
         sphericity = w[0] / (w[2] + 1e-5)
         self.feature += [linearity, sphericity]
+
+        #verticality
+        e_z = np.array([0, 0, 1])
+        evals, evecs = np.linalg.eig(np.cov(self.points.T))
+        normal = evecs[:, np.argmin(evals)]
+        cos_a = np.clip(np.dot(normal, e_z), -1.0, 1.0)
+        self.feature.append(abs(math.pi / 2 - np.arccos(cos_a)))
+
+        #desnity
+        # hull_3d = ConvexHull(self.points)
+        # point_count = len(self.points)
+        # density = point_count / hull_3d.volume
+        # self.feature.append(density)
+
+        #omnivariacne
+        omnivariance = np.cbrt(np.prod(evals))
+        self.feature.append(omnivariance)
 
 
 def read_xyz(filenm):
@@ -141,7 +161,7 @@ def feature_preparation(data_path):
     outputs = np.array(input_data).astype(np.float32)
 
     # write the output to a local file
-    data_header = 'ID,label,height,root_density,area,shape_index,linearity,sphericity'
+    data_header = 'ID,label,linearity,sphericity,verticality,omnivariance'
     np.savetxt(data_file, outputs, fmt='%10.5f', delimiter=',', newline='\n', header=data_header)
 
 
@@ -176,8 +196,8 @@ def feature_visualization(X):
     labels = ['building', 'car', 'fence', 'pole', 'tree']
 
     # plot the data with first two features
-    for i in range(5):
-        ax.scatter(X[100*i:100*(i+1), 3], X[100*i:100*(i+1), 4], marker="o", c=colors[i], edgecolor="k", label=labels[i])
+    # for i in range(5):
+    #     ax.scatter(X[100*i:100*(i+1), 3], X[100*i:100*(i+1), 4], marker="o", c=colors[i], edgecolor="k", label=labels[i])
 
     # show the figure with labels
     """
@@ -195,10 +215,17 @@ def SVM_classification(X, y):
         X: features
         y: labels
     """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4)
-    clf = svm.SVC()
-    clf.fit(X_train, y_train)
-    y_preds = clf.predict(X_test)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
+
+    #Scaling
+    scale = StandardScaler()
+    X_train_scaled = scale.fit_transform(X_train)
+    X_test_scaled = scale.transform(X_test)
+
+
+    clf = svm.SVC(kernel='linear')
+    clf.fit(X_train_scaled, y_train)
+    y_preds = clf.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_preds)
     print("SVM accuracy: %5.2f" % acc)
     print("confusion matrix")
@@ -212,8 +239,29 @@ def RF_classification(X, y):
         X: features
         y: labels
     """
-    pass
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
 
+    #Scaling
+    scale = StandardScaler()
+    X_train_scaled = scale.fit_transform(X_train)
+    X_test_scaled = scale.transform(X_test)
+    clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    clf.fit(X_train_scaled, y_train)
+    y_preds = clf.predict(X_test_scaled)
+    acc = accuracy_score(y_test, y_preds)
+    print("RF accuracy: %5.2f" % acc)
+    print("confusion matrix")
+    conf = confusion_matrix(y_test, y_preds)
+    print(conf)
+
+def backward_feature_selection(X, y):
+    clf = svm.SVC(kernel='linear')
+    selector = RFE(clf, n_features_to_select=1, step=1)
+    selector.fit(X, y)
+    print("Feature ranking (1 = most important):")
+    names = ['linearity', 'sphericity', 'verticality', 'omnivariance']
+    for name, rank in zip(names, selector.ranking_):
+        print(f"  {name}: {rank}")
 
 if __name__=='__main__':
     # specify the data folder
@@ -235,6 +283,9 @@ if __name__=='__main__':
     # SVM classification
     print('Start SVM classification')
     SVM_classification(X, y)
+
+    print('Start backward feature selection')
+    backward_feature_selection(X, y)
 
     # RF classification
     print('Start RF classification')
