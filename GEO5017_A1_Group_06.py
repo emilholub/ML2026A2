@@ -9,6 +9,7 @@ Required libraries: numpy, scipy, scikit learn, matplotlib, tqdm
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.random import randint
 from sklearn.neighbors import KDTree
 from sklearn import svm
 from sklearn.model_selection import train_test_split
@@ -231,16 +232,16 @@ def feature_visualization(X):
     colors = ['firebrick', 'grey', 'darkorange', 'dodgerblue', 'olivedrab']
     labels = ['building', 'car', 'fence', 'pole', 'tree']
 
-    # plot the data with first two features
+    # plot the data with first two features (trying with 2 specific features now)
     for i in range(5):
-        ax.scatter(X[100*i:100*(i+1), 3], X[100*i:100*(i+1), 4], marker="o", c=colors[i], edgecolor="k", label=labels[i])
+        ax.scatter(X[100*i:100*(i+1), 0], X[100*i:100*(i+1), 8], marker="o", c=colors[i], edgecolor="k", label=labels[i])
 
     # show the figure with labels
     """
     Replace the axis labels with your own feature names
     """
-    ax.set_xlabel('x1:root density')
-    ax.set_ylabel('x2:area')
+    ax.set_xlabel('height')
+    ax.set_ylabel('omnivariance')
     ax.legend()
     plt.show()
 
@@ -371,6 +372,32 @@ if __name__=='__main__':
     X_best4_rf = X[:, idx]
     print(f'\nRF with best 4 features {best4_rf}')
     RF_classification(X_best4_rf, y)
+
+    #AVERAGED RUNS FOR BEST FEATURES
+    configs = [
+        ('RF',  ['height', 'density', 'omnivariance', 'local_planarity'],         'rf'),
+        ('SVM', ['height', 'verticality', 'omnivariance', 'local_planarity'],     'linear'),
+        ('SVM', ['height', 'shape_index', 'verticality', 'density'],              'linear'),
+    ]
+
+    n_runs = 200
+    for clf_type, features, kernel in configs:
+        idx = [names.index(n) for n in features]
+        X_sub = X[:, idx]
+        accs = []
+        for seed in range(n_runs):
+            X_train, X_test, y_train, y_test = train_test_split(X_sub, y, test_size=0.4, random_state=seed)
+            scale = StandardScaler()
+            X_train_scaled = scale.fit_transform(X_train)
+            X_test_scaled = scale.transform(X_test)
+            if clf_type == 'RF':
+                clf = RandomForestClassifier(n_estimators=100, random_state=seed)
+            else:
+                clf = svm.SVC(kernel=kernel)
+            clf.fit(X_train_scaled, y_train)
+            accs.append(accuracy_score(y_test, clf.predict(X_test_scaled)))
+        print(f'{clf_type} {kernel} {features}')
+        print(f'  mean accuracy: {np.mean(accs):.4f} ± {np.std(accs):.4f}')
 
     ###////////////////////!!!!!!!!!!!!!!!!//////////////////###
     ### NOTE TO US:
