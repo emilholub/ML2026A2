@@ -22,6 +22,7 @@ from sklearn.feature_selection import SequentialFeatureSelector
 from tqdm import tqdm
 from os.path import exists, join
 from os import listdir
+from itertools import combinations
 
 
 class urban_object:
@@ -334,70 +335,114 @@ if __name__=='__main__':
     #     print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
     #     sequential_feature_selection(X, y, names, clf, direction='backward', max_features=6)
 
+    # Sequential feature selection performed worse than manual -> brute force search
+    feature_preparation(data_path=path)
+    ID, X, y = data_loading()
+    feature_visualization(X=X)
+
+    names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
+             'sphericity', 'verticality', 'density', 'omnivariance',
+             'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
+
+    classifiers = [
+        ('SVM linear', svm.SVC(kernel='linear')),
+        ('SVM rbf',    svm.SVC(kernel='rbf')),
+        ('SVM poly',   svm.SVC(kernel='poly')),
+        ('RF',         RandomForestClassifier(n_estimators=100, random_state=42)),
+    ]
+
+    # shared fixed split for feature selection (same across all classifiers)
+    X_train_fs, X_test_fs, y_train_fs, y_test_fs = train_test_split(X, y, test_size=0.4, random_state=1)
+    sc_fs   = StandardScaler()
+    X_tr_fs = sc_fs.fit_transform(X_train_fs)
+    X_te_fs = sc_fs.transform(X_test_fs)
+
+    n_runs = 200
+    for label, clf in classifiers:
+        # brute-force: find best 4 features
+        best_score, best_idx = 0, None
+        for combo in combinations(range(len(names)), 4):
+            combo = list(combo)
+            clf.fit(X_tr_fs[:, combo], y_train_fs)
+            score = accuracy_score(y_test_fs, clf.predict(X_te_fs[:, combo]))
+            if score > best_score:
+                best_score, best_idx = score, combo
+        print(f'\n{label} — best features: {[names[i] for i in best_idx]}  (OA={best_score:.4f})')
+
+        # averaged runs with best features
+        X_best = X[:, best_idx]
+        accs = []
+        for seed in range(n_runs):
+            X_tr, X_te, y_tr, y_te = train_test_split(X_best, y, test_size=0.4, random_state=seed)
+            sc = StandardScaler()
+            clf.fit(sc.fit_transform(X_tr), y_tr)
+            accs.append(accuracy_score(y_te, clf.predict(sc.transform(X_te))))
+        print(f'  mean OA ({n_runs} runs): {np.mean(accs):.4f} ± {np.std(accs):.4f}')
+
     # RF classification
     # print('Start RF classification')
     # RF_classification(X, y)
 
-    best4 = {
-        'linear': ['height', 'verticality', 'density', 'local_planarity'],
-        'rbf':    ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
-        'poly':   ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
-    }
+    # best4 = {
+    #     'linear': ['height', 'verticality', 'density', 'local_planarity'],
+    #     'rbf':    ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
+    #     'poly':   ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
+    # }
+    #
+    # for kernel, features in best4.items():
+    #     idx = [names.index(n) for n in features]
+    #     X_best4 = X[:, idx]
+    #     print(f'\nSVM {kernel} with best 4 features {features}')
+    #     SVM_classification(X_best4, y, kernel=kernel)
+    #
+    # additional_linear = [
+    #     ['height', 'area', 'verticality', 'density'],
+    #     ['height', 'area', 'verticality', 'omnivariance'],
+    #     ['height', 'verticality', 'density', 'omnivariance'],
+    #     ['height', 'shape_index', 'verticality', 'density'],
+    #     ['height', 'verticality', 'omnivariance', 'local_planarity'],
+    #     ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
+    #     ['height', 'verticality', 'density', 'vertical_density_ratio'],
+    #     ['height', 'area', 'density', 'omnivariance'],
+    # ]
+    #
+    # for features in additional_linear:
+    #     idx = [names.index(n) for n in features]
+    #     X_combo = X[:, idx]
+    #     print(f'\nSVM linear with {features}')
+    #     SVM_classification(X_combo, y, kernel='linear')
 
-    for kernel, features in best4.items():
-        idx = [names.index(n) for n in features]
-        X_best4 = X[:, idx]
-        print(f'\nSVM {kernel} with best 4 features {features}')
-        SVM_classification(X_best4, y, kernel=kernel)
-
-    additional_linear = [
-        ['height', 'area', 'verticality', 'density'],
-        ['height', 'area', 'verticality', 'omnivariance'],
-        ['height', 'verticality', 'density', 'omnivariance'],
-        ['height', 'shape_index', 'verticality', 'density'],
-        ['height', 'verticality', 'omnivariance', 'local_planarity'],
-        ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
-        ['height', 'verticality', 'density', 'vertical_density_ratio'],
-        ['height', 'area', 'density', 'omnivariance'],
-    ]
-
-    for features in additional_linear:
-        idx = [names.index(n) for n in features]
-        X_combo = X[:, idx]
-        print(f'\nSVM linear with {features}')
-        SVM_classification(X_combo, y, kernel='linear')
-
-    best4_rf = ['height', 'density', 'omnivariance', 'local_planarity']
-    idx = [names.index(n) for n in best4_rf]
-    X_best4_rf = X[:, idx]
-    print(f'\nRF with best 4 features {best4_rf}')
-    RF_classification(X_best4_rf, y)
+    # best4_rf = ['height', 'density', 'omnivariance', 'local_planarity']
+    # idx = [names.index(n) for n in best4_rf]
+    # X_best4_rf = X[:, idx]
+    # print(f'\nRF with best 4 features {best4_rf}')
+    # RF_classification(X_best4_rf, y)
 
     #AVERAGED RUNS FOR BEST FEATURES
-    configs = [
-        ('RF',  ['height', 'density', 'omnivariance', 'local_planarity'],         'rf'),
-        ('SVM', ['height', 'verticality', 'omnivariance', 'local_planarity'],     'linear'),
-        ('SVM', ['height', 'shape_index', 'verticality', 'density'],              'linear'),
-    ]
-
-    n_runs = 200
-    for clf_type, features, kernel in configs:
-        idx = [names.index(n) for n in features]
-        X_sub = X[:, idx]
-        accs = []
-        for seed in range(n_runs):
-            X_train, X_test, y_train, y_test = train_test_split(X_sub, y, test_size=0.4, random_state=seed)
-            scale = StandardScaler()
-            X_train_scaled = scale.fit_transform(X_train)
-            X_test_scaled = scale.transform(X_test)
-            if clf_type == 'RF':
-                clf = RandomForestClassifier(n_estimators=100, random_state=seed)
-            else:
-                clf = svm.SVC(kernel=kernel)
-            clf.fit(X_train_scaled, y_train)
-            accs.append(accuracy_score(y_test, clf.predict(X_test_scaled)))
-        print(f'{clf_type} {kernel} {features}')
-        print(f'  mean accuracy: {np.mean(accs):.4f} ± {np.std(accs):.4f}')
+    # configs = [
+    #     ('RF',  ['height', 'density', 'omnivariance', 'local_planarity'],         'rf'),
+    #     ('SVM', ['height', 'verticality', 'omnivariance', 'local_planarity'],     'linear'),
+    #     ('SVM', ['height', 'shape_index', 'verticality', 'density'],              'linear'),
+    # ]
+    #
+    # n_runs = 200
+    # for clf_type, features, kernel in configs:
+    #     idx = [names.index(n) for n in features]
+    #     X_sub = X[:, idx]
+    #     accs = []
+    #     for seed in range(n_runs):
+    #         X_train, X_test, y_train, y_test = train_test_split(X_sub, y, test_size=0.4, random_state=seed)
+    #         scale = StandardScaler()
+    #         X_train_scaled = scale.fit_transform(X_train)
+    #         X_test_scaled = scale.transform(X_test)
+    #         if clf_type == 'RF':
+    #             clf = RandomForestClassifier(n_estimators=100, random_state=seed)
+    #         else:
+    #             clf = svm.SVC(kernel=kernel)
+    #         clf.fit(X_train_scaled, y_train)
+    #         accs.append(accuracy_score(y_test, clf.predict(X_test_scaled)))
+    #     print(f'{clf_type} {kernel} {features}')
+    #     print(f'  mean accuracy: {np.mean(accs):.4f} ± {np.std(accs):.4f}')
 
     ###////////////////////!!!!!!!!!!!!!!!!//////////////////###
     ### NOTE TO US:
