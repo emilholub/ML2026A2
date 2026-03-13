@@ -131,9 +131,21 @@ class urban_object:
             soft_score = (evals_local[1] - evals_local[0]) / (evals_local[2] + 1e-5)
             neighbor_fit = (dists < np.std(dists)).mean()
             planarity_scores.append(soft_score * neighbor_fit)
-
         local_planarity = np.mean(planarity_scores) if planarity_scores else 0.0
         self.feature.append(local_planarity)
+
+        # volume occupancy (point cloud fill ratio)
+        hull_3d = ConvexHull(self.points)
+        bbox_volume = np.prod(self.points.max(axis=0) - self.points.min(axis=0))
+        volume_occupancy = hull_3d.volume / bbox_volume
+        self.feature.append(volume_occupancy)
+
+        # vertical density ratio (top half vs bottom half)
+        z_mid = (self.points[:, 2].max() + self.points[:, 2].min()) / 2
+        top_count = np.sum(self.points[:, 2] > z_mid)
+        bottom_count = np.sum(self.points[:, 2] <= z_mid)
+        vertical_density_ratio = top_count / (bottom_count + 1e-5)
+        self.feature.append(vertical_density_ratio)
 
 def read_xyz(filenm):
     """
@@ -185,7 +197,7 @@ def feature_preparation(data_path):
     outputs = np.array(input_data).astype(np.float32)
 
     # write the output to a local file
-    data_header = 'ID,label,height,root_density,area,shape_index,linearity,sphericity,verticality,density,omnivariance,local_planarity'
+    data_header = 'ID,label,height,root_density,area,shape_index,linearity,sphericity,verticality,density,omnivariance,local_planarity,volume_occupancy,vertical_density_ratio'
     np.savetxt(data_file, outputs, fmt='%10.5f', delimiter=',', newline='\n', header=data_header)
 
 
@@ -220,8 +232,8 @@ def feature_visualization(X):
     labels = ['building', 'car', 'fence', 'pole', 'tree']
 
     # plot the data with first two features
-    # for i in range(5):
-    #     ax.scatter(X[100*i:100*(i+1), 3], X[100*i:100*(i+1), 4], marker="o", c=colors[i], edgecolor="k", label=labels[i])
+    for i in range(5):
+        ax.scatter(X[100*i:100*(i+1), 3], X[100*i:100*(i+1), 4], marker="o", c=colors[i], edgecolor="k", label=labels[i])
 
     # show the figure with labels
     """
@@ -309,7 +321,7 @@ if __name__=='__main__':
     ### Figuring out the best combinations of features for each classifier:
 
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
-             'sphericity', 'verticality', 'density', 'omnivariance', 'local_planarity']
+             'sphericity', 'verticality', 'density', 'omnivariance', 'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
 
     classifiers = [
         svm.SVC(kernel='linear'),
@@ -317,18 +329,18 @@ if __name__=='__main__':
         svm.SVC(kernel='poly'),
         RandomForestClassifier(n_estimators=100, random_state=42)
     ]
-    for clf in tqdm(classifiers):
-        print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
-        sequential_feature_selection(X, y, names, clf, direction='backward', max_features=4)
+    # for clf in tqdm(classifiers):
+    #     print(f'\nSequential backward selection — {clf.__class__.__name__} kernel={getattr(clf, "kernel", "N/A")}')
+    #     sequential_feature_selection(X, y, names, clf, direction='backward', max_features=6)
 
     # RF classification
     # print('Start RF classification')
     # RF_classification(X, y)
 
     best4 = {
-        'linear': ['height', 'shape_index', 'linearity', 'verticality'],
-        'rbf':    ['height', 'shape_index', 'density', 'omnivariance'],
-        'poly':   ['height', 'verticality', 'density', 'omnivariance'],
+        'linear': ['height', 'verticality', 'density', 'local_planarity'],
+        'rbf':    ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
+        'poly':   ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
     }
 
     for kernel, features in best4.items():
@@ -337,7 +349,24 @@ if __name__=='__main__':
         print(f'\nSVM {kernel} with best 4 features {features}')
         SVM_classification(X_best4, y, kernel=kernel)
 
-    best4_rf = ['verticality', 'density', 'omnivariance', 'local_planarity']
+    additional_linear = [
+        ['height', 'area', 'verticality', 'density'],
+        ['height', 'area', 'verticality', 'omnivariance'],
+        ['height', 'verticality', 'density', 'omnivariance'],
+        ['height', 'shape_index', 'verticality', 'density'],
+        ['height', 'verticality', 'omnivariance', 'local_planarity'],
+        ['height', 'density', 'omnivariance', 'vertical_density_ratio'],
+        ['height', 'verticality', 'density', 'vertical_density_ratio'],
+        ['height', 'area', 'density', 'omnivariance'],
+    ]
+
+    for features in additional_linear:
+        idx = [names.index(n) for n in features]
+        X_combo = X[:, idx]
+        print(f'\nSVM linear with {features}')
+        SVM_classification(X_combo, y, kernel='linear')
+
+    best4_rf = ['height', 'density', 'omnivariance', 'local_planarity']
     idx = [names.index(n) for n in best4_rf]
     X_best4_rf = X[:, idx]
     print(f'\nRF with best 4 features {best4_rf}')
