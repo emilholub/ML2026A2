@@ -248,7 +248,7 @@ def feature_visualization(X):
 
 
 def SVM_classification(X, y, kernel='linear'):
-    test_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    test_sizes = [0.3, 0.4, 0.5]
     C_values   = [0.01, 0.1, 1, 10, 100]
 
     best_acc, best_params = 0, {}
@@ -274,14 +274,14 @@ def SVM_classification(X, y, kernel='linear'):
 
 
 def RF_classification(X, y):
-    test_sizes    = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    test_sizes    = [0.3, 0.4, 0.5]
     n_est_values  = [10, 50, 100, 200, 500]
 
     best_acc, best_params = 0, {}
     for test_size in test_sizes:
         for n_est in n_est_values:
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=1)
+                X, y, test_size=test_size, random_state=999)
             scale = StandardScaler()
             clf = RandomForestClassifier(n_estimators=n_est, random_state=42)
             clf.fit(scale.fit_transform(X_train), y_train)
@@ -319,8 +319,8 @@ if __name__=='__main__':
     ID, X, y = data_loading()
 
     # visualize features
-    print('Visualize the features')
-    feature_visualization(X=X)
+    # print('Visualize the features')
+    # feature_visualization(X=X)
 
 
 
@@ -342,7 +342,7 @@ if __name__=='__main__':
     # Sequential feature selection performed worse than manual -> brute force search
     feature_preparation(data_path=path)
     ID, X, y = data_loading()
-    feature_visualization(X=X)
+    # feature_visualization(X=X)
 
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
              'sphericity', 'verticality', 'density', 'omnivariance',
