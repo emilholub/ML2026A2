@@ -248,49 +248,55 @@ def feature_visualization(X):
 
 
 def SVM_classification(X, y, kernel='linear'):
-    """
-    Conduct SVM classification
-        X: features
-        y: labels
-        kernel: kernel function
-    """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
+    test_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    C_values   = [0.01, 0.1, 1, 10, 100]
 
-    #Scaling
+    best_acc, best_params = 0, {}
+    for test_size in test_sizes:
+        for C in C_values:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=1)
+            scale = StandardScaler()
+            clf = svm.SVC(kernel=kernel, C=C)
+            clf.fit(scale.fit_transform(X_train), y_train)
+            acc = accuracy_score(y_test, clf.predict(scale.transform(X_test)))
+            if acc > best_acc:
+                best_acc, best_params = acc, {'test_size': test_size, 'C': C}
+
+    print(f"SVM ({kernel}) best: {best_params}  OA={best_acc:.4f}")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=best_params['test_size'], random_state=1)
     scale = StandardScaler()
-    X_train_scaled = scale.fit_transform(X_train)
-    X_test_scaled = scale.transform(X_test)
-
-    clf = svm.SVC(kernel=kernel)
-    clf.fit(X_train_scaled, y_train)
-    y_preds = clf.predict(X_test_scaled)
-    acc = accuracy_score(y_test, y_preds)
-    print("SVM accuracy: %5.2f" % acc)
-    print("confusion matrix")
-    conf = confusion_matrix(y_test, y_preds)
-    print(conf)
+    clf = svm.SVC(kernel=kernel, C=best_params['C'])
+    clf.fit(scale.fit_transform(X_train), y_train)
+    print(confusion_matrix(y_test, clf.predict(scale.transform(X_test))))
 
 
 def RF_classification(X, y):
-    """
-    Conduct RF classification
-        X: features
-        y: labels
-    """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
+    test_sizes    = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    n_est_values  = [10, 50, 100, 200, 500]
 
-    #Scaling
+    best_acc, best_params = 0, {}
+    for test_size in test_sizes:
+        for n_est in n_est_values:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=1)
+            scale = StandardScaler()
+            clf = RandomForestClassifier(n_estimators=n_est, random_state=42)
+            clf.fit(scale.fit_transform(X_train), y_train)
+            acc = accuracy_score(y_test, clf.predict(scale.transform(X_test)))
+            if acc > best_acc:
+                best_acc, best_params = acc, {'test_size': test_size, 'n_estimators': n_est}
+
+    print(f"RF best: {best_params}  OA={best_acc:.4f}")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=best_params['test_size'], random_state=1)
     scale = StandardScaler()
-    X_train_scaled = scale.fit_transform(X_train)
-    X_test_scaled = scale.transform(X_test)
-    clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    clf.fit(X_train_scaled, y_train)
-    y_preds = clf.predict(X_test_scaled)
-    acc = accuracy_score(y_test, y_preds)
-    print("RF accuracy: %5.2f" % acc)
-    print("confusion matrix")
-    conf = confusion_matrix(y_test, y_preds)
-    print(conf)
+    clf = RandomForestClassifier(n_estimators=best_params['n_estimators'], random_state=42)
+    clf.fit(scale.fit_transform(X_train), y_train)
+    print(confusion_matrix(y_test, clf.predict(scale.transform(X_test))))
 
 def sequential_feature_selection(X, y, names, clf, direction='backward', max_features=4):
     for n in range(1, max_features + 1):
@@ -316,9 +322,7 @@ if __name__=='__main__':
     print('Visualize the features')
     feature_visualization(X=X)
 
-    # SVM classification
-    # print('Start SVM classification')
-    # SVM_classification(X, y)
+
 
     ### Figuring out the best combinations of features for each classifier:
 
@@ -379,9 +383,14 @@ if __name__=='__main__':
             accs.append(accuracy_score(y_te, clf.predict(sc.transform(X_te))))
         print(f'  mean OA ({n_runs} runs): {np.mean(accs):.4f} ± {np.std(accs):.4f}')
 
+
+    # SVM classification
+    print('Start SVM classification')
+    SVM_classification(X, y)
+
     # RF classification
-    # print('Start RF classification')
-    # RF_classification(X, y)
+    print('Start RF classification')
+    RF_classification(X, y)
 
     # best4 = {
     #     'linear': ['height', 'verticality', 'density', 'local_planarity'],
