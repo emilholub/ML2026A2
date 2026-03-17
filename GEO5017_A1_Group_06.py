@@ -279,6 +279,10 @@ def SVM_classification(X, y):
         y: labels
     """
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    #Scaling
+    scale = StandardScaler()
+    X_train = scale.fit_transform(X_train)
+    X_test = scale.transform(X_test)
     clf = svm.SVC(kernel='linear', C=0.1)
     clf.fit(X_train, y_train)
     y_preds = clf.predict(X_test)
@@ -404,6 +408,39 @@ def sequential_feature_selection(X, y, names, clf, direction='backward', max_fea
         selected = [name for name, s in zip(names, sfs.get_support()) if s]
         print(f"  {n} features: {selected}")
 
+def backward_elimination(X, y, names, clf):
+    from sklearn.model_selection import cross_val_score
+    remaining = list(names)
+    print(f'  {len(remaining)} features: {remaining}')
+    while len(remaining) > 1:
+        scores = []
+        for name in remaining:
+            candidate = [n for n in remaining if n != name]
+            idx = [names.index(n) for n in candidate]
+            score = cross_val_score(clf, X[:, idx], y, cv=5).mean()
+            scores.append((score, name))
+        scores.sort(reverse=True)
+        worst = scores[-1][1]
+        remaining.remove(worst)
+        print(f'  {len(remaining)} features: {remaining}  (removed: {worst})')
+
+def forward_selection(X, y, names, clf, max_features=6):
+    from sklearn.model_selection import cross_val_score
+    remaining = list(names)
+    selected = []
+    while len(selected) < max_features:
+        scores = []
+        for name in remaining:
+            candidate = selected + [name]
+            idx = [names.index(n) for n in candidate]
+            score = cross_val_score(clf, X[:, idx], y, cv=5).mean()
+            scores.append((score, name))
+        scores.sort(reverse=True)
+        best = scores[0][1]
+        selected.append(best)
+        remaining.remove(best)
+        print(f'  {len(selected)} features: {selected}')
+
 if __name__=='__main__':
     # specify the data folder
     """"Here you need to specify your own path"""
@@ -424,8 +461,13 @@ if __name__=='__main__':
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
              'sphericity', 'verticality', 'density', 'omnivariance',
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
-
+    # best features from manual selection, influenced by j- score (best)
     best_features = ['height', 'density', 'omnivariance', 'local_planarity']
+    # best features from custom forward selection (RF)
+    best_features1 = ['height', 'root_density', 'sphericity', 'local_planarity']
+    # best features from j-score
+    best_features2 = ['height', 'density', 'verticality', 'local_planarity']
+
     idx = [names.index(n) for n in best_features]
     X_best = X[:, idx]
 
@@ -439,14 +481,21 @@ if __name__=='__main__':
                                  min_samples_leaf=4, random_state=1
                                  ), X_best, y)
 
-    # SVM classification
+    # # SVM classification
     print('Start SVM classification')
-    SVM_classification(X, y)
+    SVM_classification(X_best, y)
 
     # RF classification
     print('Start RF classification')
-    RF_classification(X, y)
+    RF_classification(X_best, y)
 
+    # # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=0.1), direction='backward', max_features=4)
+    # # sequential_feature_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1), direction='backward', max_features=4)
+    # backward_elimination(X, y, names, svm.SVC(kernel='linear', C=0.1))
+    # backward_elimination(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
+    #
+    # forward_selection(X, y, names, svm.SVC(kernel='linear', C=0.1))
+    # forward_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
     # SVM classification with hyperparameter grid search
     # print('Start SVM classifier grid search')
     # SVM_classification_hyperparamters(X, y)
