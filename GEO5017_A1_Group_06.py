@@ -12,7 +12,8 @@ import numpy as np
 from numpy.random import randint
 from sklearn.neighbors import KDTree
 from sklearn import svm
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve, StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFE
@@ -247,30 +248,45 @@ def feature_visualization(X):
     plt.show()
 
 
-def SVM_classification_hyperparamters(X, y, kernel='linear'):
-    test_sizes = [0.4]
-    C_values   = [0.01, 0.1, 1, 10, 100]
-
-    best_acc, best_params = 0, {}
-    for test_size in test_sizes:
-        for C in C_values:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=1)
-            scale = StandardScaler()
-            clf = svm.SVC(kernel=kernel, C=C)
-            clf.fit(scale.fit_transform(X_train), y_train)
-            acc = accuracy_score(y_test, clf.predict(scale.transform(X_test)))
-            if acc > best_acc:
-                best_acc, best_params = acc, {'test_size': test_size, 'C': C}
-
-    print(f"SVM ({kernel}) best: {best_params}  OA={best_acc:.4f}")
-
+def SVM_classification_gridsearch(X, y, kernel='linear'):
+    # Split once: keep test set untouched
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=best_params['test_size'], random_state=1)
-    scale = StandardScaler()
-    clf = svm.SVC(kernel=kernel, C=best_params['C'])
-    clf.fit(scale.fit_transform(X_train), y_train)
-    print(confusion_matrix(y_test, clf.predict(scale.transform(X_test))))
+        X, y, test_size=0.4, random_state=1, stratify=y
+    )
+
+    # Pipeline: scaling + model
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('svc', svm.SVC(kernel=kernel))
+    ])
+
+    # Hyperparameter grid
+    param_grid = {
+        'svc__C': [0.01, 0.1, 1, 10, 100],
+        'svc__kernel': ['linear', 'rbf'],
+    }
+
+    # Cross-validation setup
+    # cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+    # Grid search
+    grid = GridSearchCV(
+        pipe,
+        param_grid,
+        scoring='accuracy',
+        n_jobs=-1
+    )
+
+    # Fit on training data only
+    grid.fit(X_train, y_train)
+
+    # Best result
+    print(f"SVM ({kernel}) best: {grid.best_params_}  OA={grid.best_score_:.4f}")
+
+    # Final evaluation on test set
+    y_pred = grid.predict(X_test)
+    print("confusion matrix")
+    print(confusion_matrix(y_test, y_pred))
 
 def SVM_classification(X, y):
     """
@@ -278,7 +294,7 @@ def SVM_classification(X, y):
         X: features
         y: labels
     """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4)
     #Scaling
     scale = StandardScaler()
     X_train = scale.fit_transform(X_train)
@@ -291,6 +307,24 @@ def SVM_classification(X, y):
     print("confusion matrix")
     conf = confusion_matrix(y_test, y_preds)
     print(conf)
+
+def SVM_cv_scores(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.4, random_state=1, stratify=y
+    )
+    # test set remains untouched
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('svc', svm.SVC(kernel='linear', C=0.1))
+    ])
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+    scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring='accuracy')
+
+    print("CV scores:", scores)
+    print("Mean CV accuracy: %5.4f" % np.mean(scores))
+    print("Std CV accuracy:  %5.4f" % np.std(scores))
 
 def RF_classification_hyperparameters(X, y):
     param_grid = {
@@ -348,25 +382,27 @@ def RF_classification(X, y):
     conf = confusion_matrix(y_test, y_preds)
     print(conf)
 
-def learning_curve(clf, X, y):
-    train_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    train_errors, test_errors = [], []
+def plot_learning_curve(clf, X, y):
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('model', clf)
+    ])
+    # cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=1)
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator=pipe,
+        X=X,
+        y=y,
+        train_sizes=np.linspace(0.3, 0.9, 7),
+    )
+    train_errors = 1 - np.mean(train_scores, axis=1)
+    test_errors = 1 - np.mean(test_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    test_std = np.std(test_scores, axis=1)
+    plt.plot(train_sizes, train_errors, label='Training error')
+    plt.plot(train_sizes, test_errors, label='Validation error')
+    plt.fill_between(train_sizes, 1 - (np.mean(train_scores, axis=1) + train_std), 1 - (np.mean(train_scores, axis=1) - train_std), alpha=0.2)
+    plt.fill_between(train_sizes, 1 - (np.mean(test_scores, axis=1) + test_std), 1 - (np.mean(test_scores, axis=1) - test_std), alpha=0.2)
 
-    for train_size in train_sizes:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, train_size=train_size, random_state=1)
-        scale = StandardScaler()
-        X_tr = scale.fit_transform(X_train)
-        X_te = scale.transform(X_test)
-
-        clf.fit(X_tr, y_train)
-        train_errors.append(1 - accuracy_score(y_train, clf.predict(X_tr)))
-        test_errors.append(1 - accuracy_score(y_test, clf.predict(X_te)))
-
-    # plot
-    n_train_samples = [int(s * len(y)) for s in train_sizes]
-    plt.plot(n_train_samples, train_errors, label='Training error')
-    plt.plot(n_train_samples, test_errors,  label='Test error')
     plt.xlabel('Number of training samples')
     plt.ylabel('Error rate')
     plt.title('Learning curve')
@@ -461,51 +497,55 @@ if __name__=='__main__':
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
              'sphericity', 'verticality', 'density', 'omnivariance',
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
-    # best features from manual selection, influenced by j- score (best)
-    best_features = ['height', 'density', 'omnivariance', 'local_planarity']
-    # best features from custom forward selection (RF)
-    best_features1 = ['height', 'root_density', 'sphericity', 'local_planarity']
-    # best features from j-score
-    best_features2 = ['height', 'density', 'verticality', 'local_planarity']
+    # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4)
+    """Best features obtained with Forward Sequential Feature Selection, C = 1.0, kernel = linear"""
+    best_features4 = ['height', 'shape_index', 'density', 'local_planarity']
 
-    idx = [names.index(n) for n in best_features]
+    # # best features from manual selection, influenced by j- score (best)
+    # best_features = ['height', 'density', 'omnivariance', 'local_planarity']
+    # # best features from custom forward selection (RF)
+    # best_features1 = ['height', 'root_density', 'sphericity', 'local_planarity']
+    # # best features from j-score
+    # best_features2 = ['height', 'density', 'verticality', 'local_planarity']
+    # # Best features obtained with Forward Sequential Feature Selection, C = 0.1, kernel = linear
+    # best_features3 = ['root_density', 'shape_index', 'local_planarity', 'volume_occupancy']
+
+    # Best features obtained with Forward Sequential Feature Selection, C = 0.1, kernel = linear
+    # best_features5 = ['area', 'shape_index', 'density', 'vertical_density_ratio']
+
+    idx = [names.index(n) for n in best_features4]
     X_best = X[:, idx]
 
     #J-scores
-    compute_j_scores(X, y, names)
+    # compute_j_scores(X, y, names)
 
-    # learning curves
-    learning_curve(svm.SVC(kernel='linear', C=0.1), X_best, y)
-    learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
-                                 min_samples_split=2, max_features=1,
-                                 min_samples_leaf=4, random_state=1
-                                 ), X_best, y)
 
-    # # SVM classification
-    print('Start SVM classification')
-    SVM_classification(X_best, y)
+    SVM_classification_gridsearch(X, y)
+
+    # SVM Training using Cross Validation
+    print('Training SVM, Cross Validation')
+    SVM_cv_scores(X, y)
+    plot_learning_curve(svm.SVC(kernel='linear', C=1.0), X_best, y)
+    # # SVM classification - Testing, only run when features and hyperparameters are finalized.
+    # print('Start SVM classification')
+    # SVM_classification(X_best, y)
+
+    # TODO RF TRAINING USING CROSS VALIDATION
+
+    # plot_learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
+    #                              min_samples_split=2, max_features=1,
+    #                              min_samples_leaf=4, random_state=1
+    #                              ), X_best, y)
 
     # RF classification
-    print('Start RF classification')
-    RF_classification(X_best, y)
+    # print('Start RF classification')
+    # RF_classification(X_best, y)
 
-    # # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=0.1), direction='backward', max_features=4)
-    # # sequential_feature_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1), direction='backward', max_features=4)
-    # backward_elimination(X, y, names, svm.SVC(kernel='linear', C=0.1))
-    # backward_elimination(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
-    #
-    # forward_selection(X, y, names, svm.SVC(kernel='linear', C=0.1))
-    # forward_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
-    # SVM classification with hyperparameter grid search
-    # print('Start SVM classifier grid search')
-    # SVM_classification_hyperparamters(X, y)
-
-    # RF classification with hyperparamter grid search
-    # print('Start RF classifier grid search')
-    # RF_classification_hyperparameters(X, y)
-
-    #AVERAGED RUNS FOR BEST FEATURES
-
+    """The set of features that gave me the best results is best_features4. I obtained them using the 
+    sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4) 
+    function. I set the regularization parameter C=1.0 so the model looks for a better fit than when C=0.1. 
+    I believe this results in a good feature set.
+    The hyperparameter"""
 
     ###////////////////////!!!!!!!!!!!!!!!!//////////////////###
     ### NOTE TO US:
