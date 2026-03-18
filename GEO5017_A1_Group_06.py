@@ -279,6 +279,10 @@ def SVM_classification(X, y):
         y: labels
     """
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    #Scaling
+    scale = StandardScaler()
+    X_train = scale.fit_transform(X_train)
+    X_test = scale.transform(X_test)
     clf = svm.SVC(kernel='linear', C=0.1)
     clf.fit(X_train, y_train)
     y_preds = clf.predict(X_test)
@@ -404,6 +408,40 @@ def sequential_feature_selection(X, y, names, clf, direction='backward', max_fea
         selected = [name for name, s in zip(names, sfs.get_support()) if s]
         print(f"  {n} features: {selected}")
 
+def backward_elimination(X, y, names, clf):
+    from sklearn.model_selection import cross_val_score
+    remaining = list(names)
+    print(f'  {len(remaining)} features: {remaining}')
+    while len(remaining) > 1:
+        scores = []
+        for name in remaining:
+            candidate = [n for n in remaining if n != name]
+            idx = [names.index(n) for n in candidate]
+            score = cross_val_score(clf, X[:, idx], y, cv=5).mean()
+            scores.append((score, name))
+        scores.sort(reverse=True)
+        worst = scores[-1][1]
+        remaining.remove(worst)
+        print(f'  {len(remaining)} features: {remaining}  (removed: {worst})')
+
+def forward_selection(X, y, names, clf, max_features=6):
+    from sklearn.model_selection import cross_val_score
+    remaining = list(names)
+    selected = []
+    while len(selected) < max_features:
+        scores = []
+        for name in remaining:
+            candidate = selected + [name]
+            idx = [names.index(n) for n in candidate]
+            score = cross_val_score(clf, X[:, idx], y, cv=5).mean()
+            scores.append((score, name))
+        scores.sort(reverse=True)
+        best = scores[0][1]
+        selected.append(best)
+        remaining.remove(best)
+        print(f'  {len(selected)} features: {selected}')
+
+
 def error_analysis(clf, X, y, clf_name, test_size=0.5):
     class_names = ['building', 'car', 'fence', 'pole', 'tree']
 
@@ -412,46 +450,44 @@ def error_analysis(clf, X, y, clf_name, test_size=0.5):
 
     scale = StandardScaler()
     X_train_s = scale.fit_transform(X_train)
-    X_test_s  = scale.transform(X_test)
+    X_test_s = scale.transform(X_test)
 
     clf.fit(X_train_s, y_train)
     y_pred = clf.predict(X_test_s)
 
     cm = confusion_matrix(y_test, y_pred)
 
-    #Overall Accuracy
+    # Overall Accuracy
     OA = accuracy_score(y_test, y_pred)
 
-    #Mean Per-Class Accuracy
+    # Mean Per-Class Accuracy
     per_class_acc = []
     for i in range(len(class_names)):
         acc_i = cm[i, i] / cm[i, :].sum()
         per_class_acc.append(acc_i)
     mA = np.mean(per_class_acc)
 
-    #Per-class Precision, Recall, F1
+    # Per-class Precision, Recall, F1
     precisions, recalls, f1s = [], [], []
     for i in range(len(class_names)):
-        TP = cm[i, i]
-        FP = cm[:, i].sum() - TP   # others predicted as class i
-        FN = cm[i, :].sum() - TP   # class i predicted as others
+        TP = cm[i, i]  # true positive
+        FP = cm[:, i].sum() - TP  # false positive
+        FN = cm[i, :].sum() - TP  # false negative
 
-        p  = TP / (TP + FP + 1e-10)
-        r  = TP / (TP + FN + 1e-10)
-        f1 = 2 * p * r / (p + r + 1e-10)
+        p = TP / (TP + FP)
+        r = TP / (TP + FN)
+        f1 = (2 * TP) / (2 * TP + FP + FN)
 
         precisions.append(p)
         recalls.append(r)
         f1s.append(f1)
 
     macro_precision = np.mean(precisions)
-    macro_recall    = np.mean(recalls)
-    macro_f1        = np.mean(f1s)
+    macro_recall = np.mean(recalls)
+    macro_f1 = np.mean(f1s)
 
-
-
+    # Print results
     print(f'  Error Analysis: {clf_name}')
-
 
     print(f'\nConfusion Matrix:')
     print(f'{"":12}', end='')
@@ -461,27 +497,26 @@ def error_analysis(clf, X, y, clf_name, test_size=0.5):
     for i, name in enumerate(class_names):
         print(f'{name:<12}', end='')
         for j in range(len(class_names)):
-            print(f'{cm[i,j]:>10}', end='')
+            print(f'{cm[i, j]:>10}', end='')
         print()
 
     print(f'\n{"Class":<12} {"Precision":>10} {"Recall":>8} {"F1":>8} {"Per-class Acc":>15}')
-    print('-'*55)
+    print('-' * 55)
     for i, cls in enumerate(class_names):
         print(f'{cls:<12} {precisions[i]:>10.3f} {recalls[i]:>8.3f} '
               f'{f1s[i]:>8.3f} {per_class_acc[i]:>15.3f}')
 
-    print('-'*55)
+    print('-' * 55)
     print(f'{"Macro-avg":<12} {macro_precision:>10.3f} {macro_recall:>8.3f} {macro_f1:>8.3f} {mA:>15.3f}')
-    print(f'\nOverall Accuracy (OA):      {OA:.4f}')
+    print(f'\nOverall Accuracy (OA):        {OA:.4f}')
     print(f'Mean per-class Accuracy (mA): {mA:.4f}')
-    print(f'Macro-avg Precision:         {macro_precision:.4f}')
-    print(f'Macro-avg Recall:            {macro_recall:.4f}')
-    print(f'Macro-avg F1:                {macro_f1:.4f}')
+    print(f'Macro-avg Precision:          {macro_precision:.4f}')
+    print(f'Macro-avg Recall:             {macro_recall:.4f}')
+    print(f'Macro-avg F1:                 {macro_f1:.4f}')
 
 
 
-
-    #Confusion matrix
+    # Plot confusion matrix
     fig, ax = plt.subplots(figsize=(7, 6))
     im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
     plt.colorbar(im)
@@ -524,8 +559,13 @@ if __name__=='__main__':
     names = ['height', 'root_density', 'area', 'shape_index', 'linearity',
              'sphericity', 'verticality', 'density', 'omnivariance',
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
-
+    # best features from manual selection, influenced by j- score (best)
     best_features = ['height', 'density', 'omnivariance', 'local_planarity']
+    # best features from custom forward selection (RF)
+    best_features1 = ['height', 'root_density', 'sphericity', 'local_planarity']
+    # best features from j-score
+    best_features2 = ['height', 'density', 'verticality', 'local_planarity']
+
     idx = [names.index(n) for n in best_features]
     X_best = X[:, idx]
 
@@ -539,25 +579,15 @@ if __name__=='__main__':
                                  min_samples_leaf=4, random_state=1
                                  ), X_best, y)
 
-    # SVM classification
+    # # SVM classification
     print('Start SVM classification')
-    SVM_classification(X, y)
+    SVM_classification(X_best, y)
 
     # RF classification
     print('Start RF classification')
-    RF_classification(X, y)
+    RF_classification(X_best, y)
 
-    # SVM classification with hyperparameter grid search
-    # print('Start SVM classifier grid search')
-    # SVM_classification_hyperparamters(X, y)
-
-    # RF classification with hyperparamter grid search
-    # print('Start RF classifier grid search')
-    # RF_classification_hyperparameters(X, y)
-
-    #AVERAGED RUNS FOR BEST FEATURES
     # SVM error analysis
-
     svm_features = ['height', 'shape_index', 'density', 'local_planarity']
     svm_idx = [names.index(n) for n in svm_features]
     X_svm = X[:, svm_idx]
@@ -574,14 +604,32 @@ if __name__=='__main__':
                                min_samples_leaf=4, random_state=1),
         X_rf, y, 'RF', test_size=0.4)
 
-    #Final comparison table
+    # Final comparison table
     print(f'  FINAL COMPARISON')
-
     print(f'{"Metric":<30} {"SVM":>6} {"RF":>6}')
     print('-' * 45)
     print(f'{"Overall Accuracy (OA)":<30} {OA_svm:>6.3f} {OA_rf:>6.3f}')
     print(f'{"Mean per-class Accuracy (mA)":<30} {mA_svm:>6.3f} {mA_rf:>6.3f}')
     print(f'{"Macro-avg F1":<30} {f1_svm:>6.3f} {f1_rf:>6.3f}')
+    winner = 'RF' if f1_rf > f1_svm else 'SVM'
+
+
+    # # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=0.1), direction='backward', max_features=4)
+    # # sequential_feature_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1), direction='backward', max_features=4)
+    # backward_elimination(X, y, names, svm.SVC(kernel='linear', C=0.1))
+    # backward_elimination(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
+    #
+    # forward_selection(X, y, names, svm.SVC(kernel='linear', C=0.1))
+    # forward_selection(X, y, names, RandomForestClassifier(n_estimators=500, max_depth=5, min_samples_split=2, max_features=1, min_samples_leaf=4, random_state=1))
+    # SVM classification with hyperparameter grid search
+    # print('Start SVM classifier grid search')
+    # SVM_classification_hyperparamters(X, y)
+
+    # RF classification with hyperparamter grid search
+    # print('Start RF classifier grid search')
+    # RF_classification_hyperparameters(X, y)
+
+    #AVERAGED RUNS FOR BEST FEATURES
 
 
     ###////////////////////!!!!!!!!!!!!!!!!//////////////////###
