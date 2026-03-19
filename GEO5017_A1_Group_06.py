@@ -411,26 +411,29 @@ def RF_classification(X, y):
     print(conf)
 
 def plot_learning_curve(clf, X, y):
-    pipe = Pipeline([
-        ('scaler', StandardScaler()),
-        ('model', clf)
-    ])
-    # cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=1)
-    train_sizes, train_scores, test_scores = learning_curve(
-        estimator=pipe,
-        X=X,
-        y=y,
-        train_sizes=np.linspace(0.3, 0.9, 7),
-    )
-    train_errors = 1 - np.mean(train_scores, axis=1)
-    test_errors = 1 - np.mean(test_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    test_std = np.std(test_scores, axis=1)
-    plt.plot(train_sizes, train_errors, label='Training error')
-    plt.plot(train_sizes, test_errors, label='Validation error')
-    plt.fill_between(train_sizes, 1 - (np.mean(train_scores, axis=1) + train_std), 1 - (np.mean(train_scores, axis=1) - train_std), alpha=0.2)
-    plt.fill_between(train_sizes, 1 - (np.mean(test_scores, axis=1) + test_std), 1 - (np.mean(test_scores, axis=1) - test_std), alpha=0.2)
+    train_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    train_errors, test_errors = [], []
 
+    for train_size in train_sizes:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, train_size=train_size, random_state=1)
+        scale = StandardScaler()
+        X_tr = scale.fit_transform(X_train)
+        X_te = scale.transform(X_test)
+
+        clf.fit(X_tr, y_train)
+        train_errors.append(1 - accuracy_score(y_train, clf.predict(X_tr)))
+        test_errors.append(1 - accuracy_score(y_test, clf.predict(X_te)))
+
+    n_train_samples = [int(s * len(y)) for s in train_sizes]
+    print(f'\n{"n_train":<10} {"train_err":>10} {"test_err":>10} ')
+    print('-' * 32)
+    for n, tr, te in zip(n_train_samples, train_errors, test_errors):
+        print(f'{n:<10} {tr:>10.4f} {te:>10.4f} {te-tr:>10.4f}')
+    # plot
+
+    plt.plot(n_train_samples, train_errors, label='Training error')
+    plt.plot(n_train_samples, test_errors,  label='Test error')
     plt.xlabel('Number of training samples')
     plt.ylabel('Error rate')
     plt.title('Learning curve')
@@ -570,10 +573,11 @@ if __name__=='__main__':
     # RF_classification_gridsearch(X, y)
     print('Training RF, Cross Validation')
     RF_cv_scores(X_best, y)
-    # plot_learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
-    #                              min_samples_split=2, max_features=1,
-    #                              min_samples_leaf=4, random_state=1
-    #                              ), X_best, y)
+    plot_learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
+                                 min_samples_split=2, max_features=1,
+                                 min_samples_leaf=4, random_state=1
+                                 ), X_best, y)
+    plot_learning_curve(svm.SVC(kernel='linear', C=0.1, random_state=1), X_best, y)
 
 
     """The set of features that gave me the best results is best_features4. I obtained them using the 
