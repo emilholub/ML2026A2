@@ -336,11 +336,12 @@ def RF_classification_gridsearch(X, y):
 
     # Hyperparameter grid
     param_grid = {
-        'n_estimators':      [100, 200, 500, 800],
-        'max_features':      [1, 2, 3, 4, None],
-        'max_depth':         [None, 5, 10, 20],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf':  [1, 2, 4],}
+        'rf__n_estimators': [100, 200, 500, 800],
+        'rf__max_features': [1, 2, 3, 4, None],
+        'rf__max_depth': [None, 5, 10, 20],
+        'rf__min_samples_split': [2, 5, 10],
+        'rf__min_samples_leaf': [1, 2, 4]
+    }
 
     # Cross-validation setup
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
@@ -365,41 +366,29 @@ def RF_classification_gridsearch(X, y):
     print("confusion matrix")
     print(confusion_matrix(y_test, y_pred))
 
-# def RF_classification_hyperparameters(X, y):
-#     param_grid = {
-#         'n_estimators':      [100, 200, 500, 800],
-#         'max_features':      [1, 2, 3, 4, None],
-#         'max_depth':         [None, 5, 10, 20],
-#         'min_samples_split': [2, 5, 10],
-#         'min_samples_leaf':  [1, 2, 4],}
-#     best_acc, best_params = 0, {}
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
-#     scale = StandardScaler()
-#     X_tr = scale.fit_transform(X_train)
-#     X_te = scale.transform(X_test)
-#
-#     for n_est in param_grid['n_estimators']:
-#         for max_feat in param_grid['max_features']:
-#             for max_dep in param_grid['max_depth']:
-#                 for min_split in param_grid['min_samples_split']:
-#                     for min_leaf in param_grid['min_samples_leaf']:
-#                         clf = RandomForestClassifier(
-#                             n_estimators=n_est, max_features=max_feat,
-#                             max_depth=max_dep, min_samples_split=min_split,
-#                             min_samples_leaf=min_leaf, random_state=42)
-#                         clf.fit(X_tr, y_train)
-#                         acc = accuracy_score(y_test, clf.predict(X_te))
-#                         if acc > best_acc:
-#                             best_acc = acc
-#                             best_params = {
-#                                 'n_estimators': n_est, 'max_features': max_feat,
-#                                 'max_depth': max_dep, 'min_samples_split': min_split,
-#                                 'min_samples_leaf': min_leaf}
-#
-#     print(f"RF best: {best_params}  OA={best_acc:.4f}")
-#     clf = RandomForestClassifier(**best_params, random_state=42)
-#     clf.fit(X_tr, y_train)
-#     print(confusion_matrix(y_test, clf.predict(X_te)))
+def RF_cv_scores(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.4, random_state=1, stratify=y
+    )
+    # test set remains untouched
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestClassifier(
+            max_depth = None,
+            max_features = 1,
+            min_samples_leaf = 1,
+            min_samples_split = 2,
+            n_estimators = 200,
+            random_state=1))
+    ])
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+    scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring='accuracy')
+
+    print("CV scores:", scores)
+    print("Mean CV accuracy: %5.4f" % np.mean(scores))
+    print("Std CV accuracy:  %5.4f" % np.std(scores))
 
 def RF_classification(X, y):
     # best hyperparameters found from prior grid search
@@ -541,7 +530,10 @@ if __name__=='__main__':
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
     # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4)
     """Best features obtained with Forward Sequential Feature Selection, C = 1.0, kernel = linear"""
-    best_features54 = ['height', 'shape_index', 'density', 'local_planarity']
+    best_features = ['height', 'shape_index', 'density', 'local_planarity']
+    """Best features based on j-scores"""
+    # best_features = ['local_planarity', 'verticality', 'density', 'root_density']
+    # best_features = ['local_planarity', 'verticality', 'density', 'height']
     # best_features = ['area', 'shape_index', 'density', 'local_planarity']
     # best_features = ['height','density','root_density','local_planarity'] #MORITZ
 
@@ -557,7 +549,7 @@ if __name__=='__main__':
     # Best features obtained with Forward Sequential Feature Selection, C = 0.1, kernel = linear
     # best_features5 = ['area', 'shape_index', 'density', 'vertical_density_ratio']
 
-    idx = [names.index(n) for n in best_features54]
+    idx = [names.index(n) for n in best_features]
     X_best = X[:, idx]
 
     #J-scores
@@ -566,24 +558,23 @@ if __name__=='__main__':
     # print('Start Feature Selection')
     # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4)
 
-    # print('Training SVM, Cross Validation')
+    print('Training SVM, Cross Validation')
     # SVM_classification_gridsearch(X, y)
-    # SVM_cv_scores(X, y)
+    SVM_cv_scores(X_best, y)
     # plot_learning_curve(svm.SVC(kernel='linear', C=1.0), X_best, y)
     # # SVM classification - Testing, only run when features and hyperparameters are finalized.
     # print('Start SVM classification')
     # SVM_classification(X_best, y)
 
-    # TODO RF TRAINING USING CROSS VALIDATION
-    # print('Training RF, Cross Validation')
+    # print('Hyper Parameter Grid Search')
+    # RF_classification_gridsearch(X, y)
+    print('Training RF, Cross Validation')
+    RF_cv_scores(X_best, y)
     # plot_learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
     #                              min_samples_split=2, max_features=1,
     #                              min_samples_leaf=4, random_state=1
     #                              ), X_best, y)
 
-    # RF classification
-    # print('Start RF classification')
-    # RF_classification(X_best, y)
 
     """The set of features that gave me the best results is best_features4. I obtained them using the 
     sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4) 
