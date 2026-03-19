@@ -322,7 +322,7 @@ def SVM_cv_scores(X, y):
     print("Mean CV accuracy: %5.4f" % np.mean(scores))
     print("Std CV accuracy:  %5.4f" % np.std(scores))
 
-def RF_classification_gridsearch(X, y, kernel='linear'):
+def RF_classification_gridsearch(X, y):
     # Split once: keep test set untouched
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.4, random_state=1, stratify=y
@@ -364,7 +364,6 @@ def RF_classification_gridsearch(X, y, kernel='linear'):
     y_pred = grid.predict(X_test)
     print("confusion matrix")
     print(confusion_matrix(y_test, y_pred))
-
 
 # def RF_classification_hyperparameters(X, y):
 #     param_grid = {
@@ -477,10 +476,13 @@ def compute_j_scores(X, y, names):
 
     return ranked
 
-def sequential_feature_selection(X, y, names, clf, direction='backward', max_features=4):
+def sequential_feature_selection(X, y, names, clf, direction, max_features=4):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.4, random_state=1, stratify=y
+    )
     for n in range(1, max_features + 1):
         sfs = SequentialFeatureSelector(clf, n_features_to_select=n, direction=direction)
-        sfs.fit(X, y)
+        sfs.fit(X_train, y_train)
         selected = [name for name, s in zip(names, sfs.get_support()) if s]
         print(f"  {n} features: {selected}")
 
@@ -539,8 +541,9 @@ if __name__=='__main__':
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
     # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4)
     """Best features obtained with Forward Sequential Feature Selection, C = 1.0, kernel = linear"""
-    # best_features = ['height', 'shape_index', 'density', 'local_planarity']
-    best_features = ['height','density','root_density','local_planarity']
+    best_features54 = ['height', 'shape_index', 'density', 'local_planarity']
+    # best_features = ['area', 'shape_index', 'density', 'local_planarity']
+    # best_features = ['height','density','root_density','local_planarity'] #MORITZ
 
     # # best features from manual selection, influenced by j- score (best)
     # best_features = ['height', 'density', 'omnivariance', 'local_planarity']
@@ -554,22 +557,24 @@ if __name__=='__main__':
     # Best features obtained with Forward Sequential Feature Selection, C = 0.1, kernel = linear
     # best_features5 = ['area', 'shape_index', 'density', 'vertical_density_ratio']
 
-    idx = [names.index(n) for n in best_features]
+    idx = [names.index(n) for n in best_features54]
     X_best = X[:, idx]
 
     #J-scores
     # compute_j_scores(X, y, names)
     # SVM Training using Cross Validation
-    print('Training SVM, Cross Validation')
-    SVM_classification_gridsearch(X, y)
-    SVM_cv_scores(X, y)
+    # print('Start Feature Selection')
+    # sequential_feature_selection(X, y, names, svm.SVC(kernel='linear', C=1.0), direction='forward', max_features=4)
+
+    # print('Training SVM, Cross Validation')
+    # SVM_classification_gridsearch(X, y)
+    # SVM_cv_scores(X, y)
     # plot_learning_curve(svm.SVC(kernel='linear', C=1.0), X_best, y)
     # # SVM classification - Testing, only run when features and hyperparameters are finalized.
     # print('Start SVM classification')
     # SVM_classification(X_best, y)
 
     # TODO RF TRAINING USING CROSS VALIDATION
-
     # print('Training RF, Cross Validation')
     # plot_learning_curve(RandomForestClassifier(n_estimators=500, max_depth=5,
     #                              min_samples_split=2, max_features=1,
