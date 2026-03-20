@@ -337,11 +337,12 @@ def RF_classification_gridsearch(X, y):
 
     # Hyperparameter grid
     param_grid = {
-        'n_estimators':      [100, 200, 500, 800],
-        'max_features':      [1, 2, 3, 4, None],
-        'max_depth':         [None, 5, 10, 20],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf':  [1, 2, 4],}
+        'rf__n_estimators': [100, 200, 500, 800],
+        'rf__max_features': [1, 2, 3, 4, None],
+        'rf__max_depth': [None, 5, 10, 20],
+        'rf__min_samples_split': [2, 5, 10],
+        'rf__min_samples_leaf': [1, 2, 4]
+    }
 
     # Cross-validation setup
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
@@ -366,6 +367,31 @@ def RF_classification_gridsearch(X, y):
     print("confusion matrix")
     print(confusion_matrix(y_test, y_pred))
 
+
+def RF_cv_scores(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.4, random_state=1, stratify=y
+    )
+    # test set remains untouched
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestClassifier(
+            max_depth = None,
+            max_features = 1,
+            min_samples_leaf = 1,
+            min_samples_split = 2,
+            n_estimators = 200,
+            random_state=1))
+    ])
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+    scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring='accuracy')
+
+    print("CV scores:", scores)
+    print("Mean CV accuracy: %5.4f" % np.mean(scores))
+    print("Std CV accuracy:  %5.4f" % np.std(scores))
+
 def RF_classification(X, y):
     # best hyperparameters found from prior grid search
 
@@ -386,6 +412,36 @@ def RF_classification(X, y):
     conf = confusion_matrix(y_test, y_preds)
     print(conf)
 
+
+def plot_learning_curve(clf, X, y):
+    train_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    train_errors, test_errors = [], []
+
+    for train_size in train_sizes:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, train_size=train_size, random_state=1)
+        scale = StandardScaler()
+        X_tr = scale.fit_transform(X_train)
+        X_te = scale.transform(X_test)
+
+        clf.fit(X_tr, y_train)
+        train_errors.append(1 - accuracy_score(y_train, clf.predict(X_tr)))
+        test_errors.append(1 - accuracy_score(y_test, clf.predict(X_te)))
+
+    n_train_samples = [int(s * len(y)) for s in train_sizes]
+    print(f'\n{"n_train":<10} {"train_err":>10} {"test_err":>10} ')
+    print('-' * 32)
+    for n, tr, te in zip(n_train_samples, train_errors, test_errors):
+        print(f'{n:<10} {tr:>10.4f} {te:>10.4f} {te-tr:>10.4f}')
+    # plot
+
+    plt.plot(n_train_samples, train_errors, label='Training error')
+    plt.plot(n_train_samples, test_errors,  label='Test error')
+    plt.xlabel('Number of training samples')
+    plt.ylabel('Error rate')
+    plt.title('Learning curve')
+    plt.legend()
+    plt.show()
 
 def compute_j_scores(X, y, names):
     classes = np.unique(y)
@@ -697,5 +753,4 @@ if __name__=='__main__':
         error_analysis('RF', RandomForestClassifier(
             n_estimators=100, max_depth=5, min_samples_split=2,
             min_samples_leaf=1, max_features=1, random_state=1), X_best, y)
-
 
