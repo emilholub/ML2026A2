@@ -25,7 +25,6 @@ from os.path import exists, join
 from os import listdir
 from itertools import combinations
 
-
 class urban_object:
     """
     Define an urban object
@@ -244,97 +243,80 @@ def feature_visualization(X):
     ax.legend()
     plt.show()
 
-def SVM_classification_gridsearch(X, y):
-    # Split once: keep test set untouched
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
-
+def SVM_classification_gridsearch(X_train, y_train):
     # Pipeline: scaling + model
     pipe = Pipeline([
         ('scaler', StandardScaler()),
         ('svc', svm.SVC())
     ])
-
     # Hyperparameter grid
-    param_grid = {
-        'svc__C': [0.01, 0.1, 1, 10, 100],
-        'svc__kernel': ['linear', 'rbf', 'poly'],
-        'svc__gamma': [0.001, 0.01, 0.1]
-    }
-
+    param_grid = [
+        {
+            'svc__kernel': ['linear'],
+            'svc__C': [0.01, 0.1, 1, 10, 100]
+        },
+        {
+            'svc__kernel': ['rbf'],
+            'svc__C': [0.01, 0.1, 1, 10, 100],
+            'svc__gamma': [0.001, 0.01, 0.1]
+        },
+        {
+            'svc__kernel': ['poly'],
+            'svc__C': [0.01, 0.1, 1, 10, 100],
+            'svc__gamma': [0.001, 0.01, 0.1]
+        }
+    ]
     # Cross-validation setup
-    # cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
-
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
     # Grid search
     grid = GridSearchCV(
         pipe,
         param_grid,
         scoring='accuracy',
+        cv=cv,
         n_jobs=-1
     )
-
     # Fit on training data only
     grid.fit(X_train, y_train)
-
     # Best result
     print(f"SVM, best: {grid.best_params_}  OA={grid.best_score_:.4f}")
+    return grid.best_params_
 
-    # Final evaluation on test set
-    y_pred = grid.predict(X_test)
-    print("confusion matrix")
-    print(confusion_matrix(y_test, y_pred))
-
-def SVM_classification(X, y):
+def SVM_classification(X_train, y_train, X_test, y_test):
     """
     Conduct SVM classification
         X: features
         y: labels
     """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4)
     #Scaling
     scale = StandardScaler()
     X_train = scale.fit_transform(X_train)
     X_test = scale.transform(X_test)
-    clf = svm.SVC(kernel='linear', C=0.1)
+    clf = svm.SVC(kernel='rbf', C=1.0, gamma=1.0)
     clf.fit(X_train, y_train)
     y_preds = clf.predict(X_test)
     acc = accuracy_score(y_test, y_preds)
     print("SVM accuracy: %5.2f" % acc)
-    print("confusion matrix")
-    conf = confusion_matrix(y_test, y_preds)
-    print(conf)
 
-def SVM_cv_scores(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
+def SVM_cv_scores(X_train, y_train):
     # test set remains untouched
     pipe = Pipeline([
         ('scaler', StandardScaler()),
-        ('svc', svm.SVC(kernel='linear', C=0.1))
+        ('svc', svm.SVC(kernel='rbf', C=1.0, gamma=1.0))
     ])
-
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
-
     scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring='accuracy')
 
     print("CV scores:", scores)
     print("Mean CV accuracy: %5.4f" % np.mean(scores))
     print("Std CV accuracy:  %5.4f" % np.std(scores))
 
-def RF_classification_gridsearch(X, y):
-    # Split once: keep test set untouched
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
-
+def RF_classification_gridsearch(X_train, y_train):
     # Pipeline: scaling + model
     pipe = Pipeline([
         ('scaler', StandardScaler()),
         ('rf', RandomForestClassifier())
     ])
-
     # Hyperparameter grid
     param_grid = {
         'rf__n_estimators': [100, 200, 500, 800],
@@ -343,10 +325,8 @@ def RF_classification_gridsearch(X, y):
         'rf__min_samples_split': [2, 5, 10],
         'rf__min_samples_leaf': [1, 2, 4]
     }
-
     # Cross-validation setup
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
-
     # Grid search
     grid = GridSearchCV(
         pipe,
@@ -361,22 +341,14 @@ def RF_classification_gridsearch(X, y):
 
     # Best result
     print(f"best features: {grid.best_params_}  best score={grid.best_score_:.4f}")
+    return grid.best_params_
 
-    # Final evaluation on test set
-    y_pred = grid.predict(X_test)
-    print("confusion matrix")
-    print(confusion_matrix(y_test, y_pred))
-
-
-def RF_cv_scores(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
+def RF_cv_scores(X_train, y_train):
     # test set remains untouched
     pipe = Pipeline([
         ('scaler', StandardScaler()),
         ('rf', RandomForestClassifier(
-            max_depth = None,
+            max_depth = 5,
             max_features = 1,
             min_samples_leaf = 1,
             min_samples_split = 2,
@@ -392,58 +364,22 @@ def RF_cv_scores(X, y):
     print("Mean CV accuracy: %5.4f" % np.mean(scores))
     print("Std CV accuracy:  %5.4f" % np.std(scores))
 
-def RF_classification(X, y):
+def RF_classification(X_train, y_train, X_test, y_test):
     # best hyperparameters found from prior grid search
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=1)
-    #Scaling
     scale = StandardScaler()
     X_train_scaled = scale.fit_transform(X_train)
     X_test_scaled = scale.transform(X_test)
-    clf = RandomForestClassifier(n_estimators=500, max_depth=5,
+    clf = RandomForestClassifier(n_estimators=200, max_depth=5,
                                  min_samples_split=2, max_features=1,
-                                 min_samples_leaf=4, random_state=1
+                                 min_samples_leaf=1, random_state=1
                                  )
     clf.fit(X_train_scaled, y_train)
     y_preds = clf.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_preds)
     print("RF accuracy: %5.2f" % acc)
-    print("confusion matrix")
-    conf = confusion_matrix(y_test, y_preds)
-    print(conf)
-
-
-def plot_learning_curve(clf, X, y):
-    train_sizes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    train_errors, test_errors = [], []
-
-    for train_size in train_sizes:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, train_size=train_size, random_state=1)
-        scale = StandardScaler()
-        X_tr = scale.fit_transform(X_train)
-        X_te = scale.transform(X_test)
-
-        clf.fit(X_tr, y_train)
-        train_errors.append(1 - accuracy_score(y_train, clf.predict(X_tr)))
-        test_errors.append(1 - accuracy_score(y_test, clf.predict(X_te)))
-
-    n_train_samples = [int(s * len(y)) for s in train_sizes]
-    print(f'\n{"n_train":<10} {"train_err":>10} {"test_err":>10} ')
-    print('-' * 32)
-    for n, tr, te in zip(n_train_samples, train_errors, test_errors):
-        print(f'{n:<10} {tr:>10.4f} {te:>10.4f} {te-tr:>10.4f}')
-    # plot
-
-    plt.plot(n_train_samples, train_errors, label='Training error')
-    plt.plot(n_train_samples, test_errors,  label='Test error')
-    plt.xlabel('Number of training samples')
-    plt.ylabel('Error rate')
-    plt.title('Learning curve')
-    plt.legend()
-    plt.show()
 
 def compute_j_scores(X, y, names):
+    print("\n=== Computing J-scores ===")
     classes = np.unique(y)
     N = len(y)
     j_scores = []
@@ -471,7 +407,7 @@ def compute_j_scores(X, y, names):
 
     return ranked
 
-# NOT USED
+# USED
 def sequential_feature_selection(X, y, names, clf, direction, n_features=4):
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.4, random_state=1, stratify=y
@@ -480,16 +416,8 @@ def sequential_feature_selection(X, y, names, clf, direction, n_features=4):
     sfs.fit(X_train, y_train)
     selected = [name for name, s in zip(names, sfs.get_support()) if s]
 
-    # evaluate accuracy with selected features
-    idx = [names.index(n) for n in selected]
-    scale = StandardScaler()
-    X_train_sel = scale.fit_transform(X_train[:, idx])
-    X_test_sel = scale.transform(X_test[:, idx])
-    clf.fit(X_train_sel, y_train)
-    acc = accuracy_score(y_test, clf.predict(X_test_sel))
-
-    print(f"  Selected: {selected}  |  OA = {acc:.4f}")
-    return selected, acc
+    print(f"  Selected: {selected}")
+    return selected
 
 # NOT USED
 def backward_elimination(X, y, names, clf):
@@ -551,9 +479,10 @@ def plot_learning_curve_manual(clf_name, clf, X, y):
     plt.plot(train_sizes, test_accs, '-', label='Test error')
     plt.xlabel('Number of training samples')
     plt.ylabel('Error rate')
-    plt.title('Learning curve')
     plt.legend()
     plt.tight_layout()
+    plt.grid(visible=True, which='major', axis='both', linestyle='--')
+    plt.title(f'Learning curve for {clf_name} classifier.')
     plt.savefig(f'learning_curve_{clf_name}.png', dpi=150, bbox_inches='tight')
     plt.show()
 
@@ -607,75 +536,6 @@ def error_analysis(clf_name, clf, X, y):
     plt.savefig(f'confusion_matrix_{clf_name}.png', dpi=150, bbox_inches='tight')
     plt.show()
 
-def tune_svm(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
-    scale = StandardScaler()
-    X_train_scaled = scale.fit_transform(X_train)
-    X_test_scaled = scale.transform(X_test)
-
-    print(f"\n{'Kernel':<10} {'C':<8} {'Gamma':<10} {'Train OA':<10} {'Test OA':<10}")
-    print('-' * 48)
-
-    best_acc, best_params = 0, {}
-    for kernel in ['linear', 'rbf', 'poly']:
-        for C in [0.01, 0.1, 1.0, 10.0, 100.0]:
-            gammas = [0.001, 0.01, 0.1, 1.0] if kernel != 'linear' else ['scale']
-            for gamma in gammas:
-                clf = svm.SVC(kernel=kernel, C=C, gamma=gamma)
-                clf.fit(X_train_scaled, y_train)
-                train_acc = accuracy_score(y_train, clf.predict(X_train_scaled))
-                test_acc = accuracy_score(y_test, clf.predict(X_test_scaled))
-                print(f"{kernel:<10} {C:<8} {str(gamma):<10} {train_acc:<10.4f} {test_acc:<10.4f}")
-
-                if test_acc > best_acc:
-                    best_acc = test_acc
-                    best_params = {'kernel': kernel, 'C': C, 'gamma': gamma}
-
-    print(f"\nBest SVM: {best_params}  |  OA = {best_acc:.4f}")
-    return best_params
-
-
-def tune_rf(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.4, random_state=1, stratify=y
-    )
-    scale = StandardScaler()
-    X_train_scaled = scale.fit_transform(X_train)
-    X_test_scaled = scale.transform(X_test)
-
-    print(f"\n{'n_est':<8} {'depth':<8} {'min_split':<12} {'min_leaf':<10} {'max_feat':<10} {'Train OA':<10} {'Test OA':<10}")
-    print('-' * 68)
-
-    best_acc, best_params = 0, {}
-    for n_est in [100, 200, 500]:
-        for max_depth in [5, 10, 20, None]:
-            for min_split in [2, 5, 10]:
-                for min_leaf in [1, 2, 4]:
-                    for max_feat in [1, 2, 3, None]:
-                        clf = RandomForestClassifier(
-                            n_estimators=n_est, max_depth=max_depth,
-                            min_samples_split=min_split, min_samples_leaf=min_leaf,
-                            max_features=max_feat, random_state=1
-                        )
-                        clf.fit(X_train_scaled, y_train)
-                        train_acc = accuracy_score(y_train, clf.predict(X_train_scaled))
-                        test_acc = accuracy_score(y_test, clf.predict(X_test_scaled))
-                        print(f"{n_est:<8} {str(max_depth):<8} {min_split:<12} {min_leaf:<10} {str(max_feat):<10} {train_acc:<10.4f} {test_acc:<10.4f}")
-
-                        if test_acc > best_acc:
-                            best_acc = test_acc
-                            best_params = {
-                                'n_estimators': n_est, 'max_depth': max_depth,
-                                'min_samples_split': min_split, 'min_samples_leaf': min_leaf,
-                                'max_features': max_feat
-                            }
-
-    print(f"\nBest RF: {best_params}  |  OA = {best_acc:.4f}")
-    return best_params
-
-
 if __name__=='__main__':
 
     """"Here you need to specify your own path"""
@@ -695,15 +555,17 @@ if __name__=='__main__':
              'local_planarity', 'volume_occupancy', 'vertical_density_ratio']
 
     # J-scores
-    compute_j_scores(X, y, names)
+    # compute_j_scores(X, y, names)
 
 
-    run_featureselector = True
-    run_tuning = False
-    run_learning_curve = False
+    run_featureselector = False
+    run_hyperparameter_tuning = False
+    run_training_CV = True
+    run_learning_curve = True
+    run_RF_classification = True
+    run_SVM_classification = True
 
     if run_featureselector:
-
         print("=== SVM Feature Selection ===")
         for kernel in ['linear', 'rbf', 'poly']:
             for C in [0.1, 1.0, 10.0]:
@@ -727,30 +589,45 @@ if __name__=='__main__':
     # we now choose our 4 final features. These are the following:
     best_features = ['height', 'shape_index', 'density', 'local_planarity']
     #best_features = ['height', 'root_density', 'density', 'local_planarity']
+    # best_features = ['sphericity', 'root_density', 'volume_occupancy', 'local_planarity']
 
     # selecting only the 4 best features from our data.txt
     idx = [names.index(n) for n in best_features]
     X_best = X[:, idx]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_best, y, test_size=0.4, random_state=1, stratify=y
+    )
 
-    if run_tuning:
-        print("\n=== SVM Hyperparameter Tuning ===")
-        best_svm_params = tune_svm(X_best, y)
+    if run_hyperparameter_tuning:
+        print("\n=== SVM Hyperparameter Hyperparameter Tuning ===")
+        svm_best_params = SVM_classification_gridsearch(X_train, y_train)
+        print("\n=== RF Hyperparameter Hyperparameter Tuning ===")
+        rf_best_params = RF_classification_gridsearch(X_train, y_train)
 
-        print("\n=== RF Hyperparameter Tuning ===")
-        best_rf_params = tune_rf(X_best, y)
+    if run_training_CV:
+        SVM_cv_scores(X_train, y_train)
+        RF_cv_scores(X_train, y_train)
 
     if run_learning_curve:
         # Learning curves
         print("\n=== Learning Curves ===")
         plot_learning_curve_manual('SVM', svm.SVC(kernel='rbf', C=1.0, gamma=1.0), X_best, y)
         plot_learning_curve_manual('RF', RandomForestClassifier(
-            n_estimators=100, max_depth=5, min_samples_split=2,
-            min_samples_leaf=1, max_features=1, random_state=1), X_best, y)
-
+            n_estimators=200, max_depth=5,
+            min_samples_split=2, max_features=1,
+            min_samples_leaf=1, random_state=1), X_best, y)
         # Error analysis
         print("\n=== Error Analysis ===")
         error_analysis('SVM', svm.SVC(kernel='rbf', C=1.0, gamma=1.0), X_best, y)
         error_analysis('RF', RandomForestClassifier(
-            n_estimators=100, max_depth=5, min_samples_split=2,
-            min_samples_leaf=1, max_features=1, random_state=1), X_best, y)
+            n_estimators=200, max_depth=5,
+            min_samples_split=2, max_features=1,
+            min_samples_leaf=1, random_state=1), X_best, y)
 
+    if run_SVM_classification:
+        print("\n=== SVM Classification ===")
+        SVM_classification(X_train, y_train, X_test, y_test)
+
+    if run_RF_classification:
+        print("\n=== RF Classification ===")
+        RF_classification(X_train, y_train, X_test, y_test)
