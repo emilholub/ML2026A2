@@ -561,7 +561,7 @@ if __name__=='__main__':
     run_featureselector = False
     run_hyperparameter_tuning = False
     run_training_CV = True
-    run_learning_curve = True
+    run_learning_curve = False
     run_RF_classification = True
     run_SVM_classification = True
 
