@@ -27,6 +27,7 @@ the script:
 
 The default configuration (as shown above) runs cross-validation and final
 classification for both SVM and RF using the pre-selected feature subset.
+Setting the run_featureselector and run_hyperparameter_tuning to true makes the running time extensively long, thus for quick insight into the code and results one should set them to False. 
 
 Output files: data.txt (feature file for all input poin cloud data), learning_curve_SVM.png, learning_curve_RF.png, confusion_matrix_SVM.png, confusion_matrix_RF.png.
 Console output (J-scores, CV scores, accuracy) is printed to stdout only.
